@@ -7,15 +7,22 @@ public class CraneController : MonoBehaviour
     public Transform gancho;
     public Transform cableVisual;
 
-    [Header("Ajustes de Velocidad")]
+    [Header("Ajustes de Velocidad y Detección")]
     public float velocidadCarro = 5f;
     public float velocidadGancho = 4f;
+
+    [Tooltip("Distancia del sensor hacia abajo.")]
+    public float distanciaDeteccion = 0.3f;
+    [Tooltip("Distancia del sensor hacia los lados.")]
+    public float distanciaDeteccionHorizontal = 1.5f;
+    [Tooltip("Distancia del sensor volumétrico hacia arriba.")]
+    public float distanciaDeteccionArriba = 0.1f;
 
     [Header("Límites de Movimiento")]
     public float limiteCarroMin = -7.5f;
     public float limiteCarroMax = 7.5f;
-    public float limiteGanchoMin = -8.5f; // Lo más bajo (cerca del suelo)
-    public float limiteGanchoMax = -1f;   // Lo más alto (pegado al carro)
+    public float limiteGanchoMin = -8.5f;
+    public float limiteGanchoMax = -1f;
 
     void Update()
     {
@@ -31,10 +38,34 @@ public class CraneController : MonoBehaviour
 
         if (inputX != 0)
         {
-            // Time.deltaTime hace que el movimiento sea fluido sin importar los FPS
-            Vector3 nuevaPos = carro.localPosition + Vector3.right * inputX * velocidadCarro * Time.deltaTime;
+            Vector3 direccion = inputX > 0 ? Vector3.right : Vector3.left;
 
-            // Mathf.Clamp impide que el valor se pase de los límites mínimo y máximo
+            // CORRECCIÓN: El sensor lateral nace del centro exacto del gancho
+            Vector3 origenSensor = gancho.position;
+            Vector3 tamañoSensorLateral = new Vector3(0.1f, 0.4f, 0.9f);
+
+            if (Physics.BoxCast(origenSensor, tamañoSensorLateral, direccion, out RaycastHit hit, gancho.rotation, distanciaDeteccionHorizontal, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            {
+                if (hit.collider.transform.root != gancho.root)
+                {
+                    Rigidbody rbObstaculo = hit.collider.attachedRigidbody;
+                    HookController hook = gancho.GetComponent<HookController>();
+                    bool esCargaEnganchada = (hook != null && hook.cargaEnganchada == hit.collider.gameObject);
+
+                    if (rbObstaculo != null && !rbObstaculo.isKinematic && !esCargaEnganchada)
+                    {
+                        Vector3 nuevaVelocidad = rbObstaculo.linearVelocity;
+                        nuevaVelocidad.x = direccion.x * velocidadCarro;
+                        rbObstaculo.linearVelocity = nuevaVelocidad;
+                    }
+                    inputX = 0f;
+                }
+            }
+        }
+
+        if (inputX != 0)
+        {
+            Vector3 nuevaPos = carro.localPosition + Vector3.right * inputX * velocidadCarro * Time.deltaTime;
             nuevaPos.x = Mathf.Clamp(nuevaPos.x, limiteCarroMin, limiteCarroMax);
             carro.localPosition = nuevaPos;
         }
@@ -46,10 +77,67 @@ public class CraneController : MonoBehaviour
         if (Input.GetKey(KeyCode.W)) inputY = 1f;
         if (Input.GetKey(KeyCode.S)) inputY = -1f;
 
+        if (inputY < 0)
+        {
+            Vector3 origenSensor = gancho.position + (Vector3.up * 0.5f);
+            HookController hook = gancho.GetComponent<HookController>();
+            bool llevaCarga = (hook != null && hook.cargaEnganchada != null);
+            float distanciaTotal = llevaCarga ? (distanciaDeteccion + 0.5f + 2.5f) : (distanciaDeteccion + 0.5f);
+            Vector3 tamañoSensorVertical = new Vector3(0.9f, 0.1f, 0.9f);
+
+            RaycastHit[] hits = Physics.BoxCastAll(origenSensor, tamañoSensorVertical, Vector3.down, gancho.rotation, distanciaTotal, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            bool obstaculoDetectado = false;
+
+            foreach (RaycastHit hit in hits)
+            {
+                if (hit.collider.transform == gancho) continue;
+                if (hit.collider.transform.root == gancho.root) continue;
+                if (llevaCarga && hit.collider.gameObject == hook.cargaEnganchada) continue;
+
+                obstaculoDetectado = true;
+                break;
+            }
+
+            if (obstaculoDetectado) inputY = 0f;
+        }
+        else if (inputY > 0)
+        {
+            Vector3 origenSensor = gancho.position;
+            Vector3 tamañoSensorVertical = new Vector3(0.9f, 0.1f, 0.9f);
+
+            RaycastHit[] hits = Physics.BoxCastAll(origenSensor, tamañoSensorVertical, Vector3.up, gancho.rotation, distanciaDeteccionArriba, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            bool obstaculoDetectado = false;
+
+            foreach (RaycastHit hit in hits)
+            {
+                if (hit.collider.transform == gancho) continue;
+                if (hit.collider.transform.root == gancho.root) continue;
+
+                HookController hook = gancho.GetComponent<HookController>();
+                bool esCargaEnganchada = (hook != null && hook.cargaEnganchada != null && hit.collider.gameObject == hook.cargaEnganchada);
+                if (esCargaEnganchada) continue;
+
+                // NUEVO: Transferencia de energía cinética hacia arriba
+                Rigidbody rbObstaculo = hit.collider.attachedRigidbody;
+                if (rbObstaculo != null && !rbObstaculo.isKinematic)
+                {
+                    Vector3 nuevaVelocidad = rbObstaculo.linearVelocity;
+                    // Inyectamos la velocidad de ascenso del gancho directamente al contenedor
+                    nuevaVelocidad.y = velocidadGancho;
+                    rbObstaculo.linearVelocity = nuevaVelocidad;
+                }
+
+                obstaculoDetectado = true;
+                break;
+            }
+
+            // Pausamos el modelo del gancho para no atravesar la caja mientras la empujamos
+            if (obstaculoDetectado) inputY = 0f;
+        }
+
         if (inputY != 0)
         {
             Vector3 nuevaPos = gancho.localPosition + Vector3.up * inputY * velocidadGancho * Time.deltaTime;
-
             nuevaPos.y = Mathf.Clamp(nuevaPos.y, limiteGanchoMin, limiteGanchoMax);
             gancho.localPosition = nuevaPos;
 
@@ -59,13 +147,10 @@ public class CraneController : MonoBehaviour
 
     private void ActualizarCable()
     {
-        // Ajustamos dinámicamente el tamaño y posición del cilindro visual
         if (cableVisual != null)
         {
             float distancia = Mathf.Abs(gancho.localPosition.y);
-            // La escala Y primitiva de Unity es 2, por lo que dividimos la distancia entre 2
             cableVisual.localScale = new Vector3(0.1f, distancia / 2f, 0.1f);
-            // El centro del cable debe estar a la mitad del recorrido del gancho
             cableVisual.localPosition = new Vector3(0f, gancho.localPosition.y / 2f, 0f);
         }
     }

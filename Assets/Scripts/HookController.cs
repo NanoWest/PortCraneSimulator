@@ -3,7 +3,7 @@ using UnityEngine;
 public class HookController : MonoBehaviour
 {
     private GameObject cargaDetectada = null;
-    private GameObject cargaEnganchada = null;
+    public GameObject cargaEnganchada = null;
 
     void Update()
     {
@@ -16,9 +16,6 @@ public class HookController : MonoBehaviour
         {
             SoltarCarga();
         }
-
-        // ELIMINADO: Ya no forzamos la posición de la caja en el Update.
-        // El FixedJoint se encargará de mantenerla unida físicamente.
     }
 
     private void OnTriggerEnter(Collider other)
@@ -43,24 +40,39 @@ public class HookController : MonoBehaviour
     {
         cargaEnganchada = cargaDetectada;
 
-        // 1. Acomodamos la caja justo debajo del gancho una sola vez
-        cargaEnganchada.transform.position = this.transform.position + new Vector3(0f, -0.75f, 0f);
-        cargaEnganchada.transform.rotation = Quaternion.identity;
-
-        // 2. NUEVO: Creamos una articulación física para pegar la caja al gancho
-        FixedJoint joint = cargaEnganchada.AddComponent<FixedJoint>();
+        ConfigurableJoint joint = cargaEnganchada.AddComponent<ConfigurableJoint>();
         joint.connectedBody = this.GetComponent<Rigidbody>();
 
-        // NOTA: Eliminamos la línea que apagaba la física (isKinematic = true).
-        // Al mantener sus físicas encendidas, la caja reaccionará de forma natural a los choques.
+        // CORRECCIÓN 1: Desactivamos la colisión interna para eliminar el temblor explosivo.
+        joint.enableCollision = false;
 
-        Debug.Log("Carga enganchada con éxito.");
+        joint.autoConfigureConnectedAnchor = false;
+        joint.anchor = new Vector3(0f, 0.5f, 0f);
+        joint.connectedAnchor = new Vector3(0f, -0.25f, 0f);
+
+        joint.xMotion = ConfigurableJointMotion.Locked;
+        joint.yMotion = ConfigurableJointMotion.Locked;
+        joint.zMotion = ConfigurableJointMotion.Locked;
+
+        // CORRECCIÓN 2: Cambiamos Free a Limited para que el viento no balancee la caja 
+        // más allá de cierto ángulo, evitando que atraviese físicamente el gancho.
+        joint.angularXMotion = ConfigurableJointMotion.Limited;
+        joint.angularYMotion = ConfigurableJointMotion.Locked;
+        joint.angularZMotion = ConfigurableJointMotion.Limited;
+
+        // Configuramos el límite máximo de oscilación a 20 grados
+        SoftJointLimit limit = new SoftJointLimit();
+        limit.limit = 2f;
+        joint.lowAngularXLimit = limit;
+        joint.highAngularXLimit = limit;
+        joint.angularZLimit = limit;
+
+        Debug.Log("Carga enganchada. Temblor corregido y oscilación limitada.");
     }
 
     private void SoltarCarga()
     {
-        // 1. Para soltarla, simplemente destruimos la articulación
-        FixedJoint joint = cargaEnganchada.GetComponent<FixedJoint>();
+        ConfigurableJoint joint = cargaEnganchada.GetComponent<ConfigurableJoint>();
         if (joint != null)
         {
             Destroy(joint);
