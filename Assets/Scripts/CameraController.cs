@@ -3,46 +3,53 @@ using UnityEngine;
 public class CameraController : MonoBehaviour
 {
     [Header("Objetivo de la Cámara")]
-    public Transform target; // El objeto que la cámara va a mirar (la grúa)
+    public Transform target; // La grúa base
 
     [Header("Ajustes")]
-    public float distancia = 18f; // Qué tan lejos está la cámara
-    public float sensibilidadRaton = 3f; // Velocidad al girar
+    public float sensibilidadRaton = 3f;
+    public float alturaObjetivo = 10f; // Ajuste este valor si quiere que el pivote de rotación esté más arriba
 
-    private float rotacionX = 25f; // Ángulo vertical inicial
-    private float rotacionY = 45f; // Ángulo horizontal inicial
+    private float distancia;
+    private float rotacionX;
+    private float rotacionY;
 
-    void Update()
+    void Start()
     {
-        // Solo rotaremos la cámara si mantenemos presionado el clic derecho (botón 1)
-        if (Input.GetMouseButton(1))
+        if (target != null)
         {
-            rotacionY += Input.GetAxis("Mouse X") * sensibilidadRaton;
-            // Restamos en Y para que no se invierta el control vertical
-            rotacionX -= Input.GetAxis("Mouse Y") * sensibilidadRaton;
+            // 1. Lee exactamente la rotación que usted configuró en el Inspector
+            Vector3 angulos = transform.eulerAngles;
+            rotacionX = angulos.x;
+            rotacionY = angulos.y;
 
-            // Limitamos la rotación vertical para que la cámara no dé volteretas por debajo del suelo o por encima del cenit
-            rotacionX = Mathf.Clamp(rotacionX, 5f, 80f);
+            // 2. Calcula la distancia real de la cámara respecto al centro del objetivo
+            Vector3 pivote = target.position + (Vector3.up * alturaObjetivo);
+            distancia = Vector3.Distance(transform.position, pivote);
         }
     }
 
-    // LateUpdate se ejecuta después de que todos los demás objetos se han movido,
-    // ideal para cámaras, evitando tirones visuales.
+    void Update()
+    {
+        if (Input.GetMouseButton(1))
+        {
+            rotacionY += Input.GetAxis("Mouse X") * sensibilidadRaton;
+            rotacionX -= Input.GetAxis("Mouse Y") * sensibilidadRaton;
+            rotacionX = Mathf.Clamp(rotacionX, 5f, 85f);
+        }
+    }
+
     void LateUpdate()
     {
         if (target != null)
         {
-            // Calculamos la nueva rotación basada en los movimientos del ratón
             Quaternion rotacion = Quaternion.Euler(rotacionX, rotacionY, 0);
+            Vector3 pivote = target.position + (Vector3.up * alturaObjetivo);
 
-            // Calculamos la posición manteniendo la distancia respecto al target
-            Vector3 posicion = target.position - (rotacion * Vector3.forward * distancia);
-
-            // Añadimos un pequeño desfase hacia arriba para que la cámara mire el centro de la grúa y no el suelo
-            Vector3 targetCentro = target.position + (Vector3.up * 5f);
+            // Mantiene la posición basada estrictamente en su rotación inicial
+            Vector3 posicion = pivote - (rotacion * Vector3.forward * distancia);
 
             transform.position = posicion;
-            transform.LookAt(targetCentro);
+            transform.rotation = rotacion; // Reemplazamos LookAt por rotación directa para evitar saltos
         }
     }
 }

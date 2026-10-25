@@ -11,6 +11,17 @@ public class CraneController : MonoBehaviour
     public float velocidadCarro = 5f;
     public float velocidadGancho = 4f;
 
+    [Header("Físicas del Cable (Clima)")]
+    [Tooltip("Vector de fuerza del viento. Puede leerlo desde su WeatherManager.")]
+    public Vector3 fuerzaVientoGlobal = new Vector3(2f, 0, 0);
+    [Tooltip("Qué tanto afecta el viento al peso del gancho.")]
+    public float sensibilidadViento = 0.05f;
+    [Tooltip("Tiempo que tarda en estabilizarse (simula el peso de la carga).")]
+    public float amortiguacionPendulo = 2f;
+
+    private Vector3 offsetBalanceo;
+    private Vector3 velocidadOscilacion;
+
     [Tooltip("Distancia del sensor hacia abajo.")]
     public float distanciaDeteccion = 0.3f;
     [Tooltip("Distancia del sensor hacia los lados.")]
@@ -24,10 +35,16 @@ public class CraneController : MonoBehaviour
     public float limiteGanchoMin = -8.5f;
     public float limiteGanchoMax = -1f;
 
+    [Header("Configuración de Grúa (Base sobre Rieles)")]
+    public float velocidadGrua = 3f;
+    public float limiteGruaMin = -20f;
+    public float limiteGruaMax = 20f;
+
     void Update()
     {
         MoverCarro();
         MoverGancho();
+        MoverGruaBase();
     }
 
     private void MoverCarro()
@@ -152,6 +169,23 @@ public class CraneController : MonoBehaviour
             float distancia = Mathf.Abs(gancho.localPosition.y);
             cableVisual.localScale = new Vector3(0.1f, distancia / 2f, 0.1f);
             cableVisual.localPosition = new Vector3(0f, gancho.localPosition.y / 2f, 0f);
+        }
+    }
+
+    private void MoverGruaBase()
+    {
+        float inputZ = 0f;
+        // Usamos las flechas direccionales para mover toda la estructura
+        if (Input.GetKey(KeyCode.UpArrow)) inputZ = 1f;
+        if (Input.GetKey(KeyCode.DownArrow)) inputZ = -1f;
+
+        if (inputZ != 0)
+        {
+            // Movemos el objeto raíz (la grúa completa) en el eje Z (forward/back)
+            Vector3 nuevaPos = transform.position + Vector3.forward * inputZ * velocidadGrua * Time.deltaTime;
+            // Limitamos el recorrido de los rieles
+            nuevaPos.z = Mathf.Clamp(nuevaPos.z, limiteGruaMin, limiteGruaMax);
+            transform.position = nuevaPos;
         }
     }
 }
